@@ -1,4 +1,4 @@
 image:
   repository: rakshitsen/go-web-app
   pullPolicy: IfNotPresent
-  tag: "16872341953"
+  tag: "16873211228"
