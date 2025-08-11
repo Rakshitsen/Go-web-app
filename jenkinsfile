@@ -1,0 +1,66 @@
+pipeline{
+    agent any
+    environment {
+        USER_NAME = "rakshitsen"
+        IMAGE_NAME = "go-web-app"
+    }
+    stages{
+        stage('Checkout & Build') {
+            when {
+                allOf {
+                    branch 'main'
+                    not { changeset "README.md" }
+                    not { changeset "helm/**" }
+                    not { changeset "k8s/**" }
+                }
+            }
+            steps {
+                    git(
+                    branch: 'main',
+                    url: 'https://github.com/Rakshitsen/Go-web-app.git'
+                )
+            }
+        }
+        stage('test'){
+            steps{
+                echo "test stage 2 started"
+                sh 'go test'
+            }
+            
+        }
+        stage('build'){
+            steps{
+                echo "build stage 3 started"
+                sh 'go build -o main'
+            }
+        }
+        stage('build image'){
+            steps{
+                echo "docker image creating stage 4"
+                sh 'docker build -t $USER_NAME/$IMAGE_NAME:$BUILD_NUMBER .'
+            }
+        }
+        stage('scan image'){
+            steps{
+                echo "docker image scanning stage 5"
+                sh '''
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                    aquasec/trivy image $USER_NAME/$IMAGE_NAME:$BUILD_NUMBER
+                '''
+            }
+        }
+        stage('push image'){
+            steps{
+                echo "docker image push stage 6"
+                withCredentials([usernamePassword(credentialsId: 'Docker_cred', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]){
+                    sh '''
+                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                        docker push $USER_NAME/$IMAGE_NAME:$BUILD_NUMBER
+                        docker logout
+                    '''
+                }
+            }
+            
+        }
+    }
+}
