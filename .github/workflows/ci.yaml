@@ -1,79 +1,82 @@
 name: ci
 on:
-    push:
-        branches:
-            - main
-        paths-ignore:
-            - "README.md"
-            - "helm/**"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "README.md"
+      - "helm/**"
+
 jobs:
-    build:
-        runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        steps:
-            - name: checkout code
-              uses: actions/checkout@v4
-            
-            - name: set up golang 1.22
-              uses: actions/setup-go@v2
-              with:
-                go-version: 1.22
-            
-            - name: go build
-              run: go build -o main .
-            
+      - name: Set up golang 1.22
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.22
 
-            - name: test
-              run: go test ./...
-    
-    code-quality:
-        runs-on: ubuntu-latest
+      - name: Go build
+        run: go build -o main .
 
-        steps:
-            - name: checkout code
-              uses: actions/checkout@v4
-            
-            - name: Run golangci-lint
-              uses: golangci/golangci-lint-action@v6
-              with:
-                version: v1.56.2
-    
-    Push:
-        runs-on: ubuntu-latest
+      - name: Test
+        run: go test ./...
 
-        steps:
-            - name: checkout code
-              uses: actions/checkout@v4
-            
-            - name: Setup docker buildx
-              uses: docker/setup-buildx-action@v3
-            
-            - name: Docker login
-              uses: docker/login-action@v3
-              with:
-                username: ${{ secrets.DOCKERHUB_USERNAME }}
-                password: ${{ secrets.DOCKERHUB_TOKEN }}
-            
-            - name: Build and push
-              uses: docker/build-push-action@v6
-              with:
-                context: .
-                file: ./Dockerfile
-                push: true
-                tags: ${{secrets.DOCKERHUB_USERNAME }}/go-web-app:${{ github.run_id}}
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    Update-new-tag-helm-chart:
-        runs-on: ubuntu-latest
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.56.2
 
-        needs: Push
+  push:
+    runs-on: ubuntu-latest
+    needs: [build, code-quality]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        steps:
-            - name: checkout code
-              uses: actions/checkout@v4
-              with:
-                token: ${{secrets.TOKEN}}
+      - name: Setup docker buildx
+        uses: docker/setup-buildx-action@v3
 
-            - name: update tag in helm chart
-              run: |
-                sed -i 's/tag: .*/tag: "${{ github.run_id}}"/' helm/go-web-app-chart/values.yaml
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/go-web-app:${{ github.run_id }}
+
+  update-new-tag-helm-chart:
+    runs-on: ubuntu-latest
+    needs: push
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TOKEN }}
+
+      - name: Update tag in helm chart
+        run: |
+          sed -i "s/tag: .*/tag: \"${{ github.run_id }}\"/" helm/go-web-app-chart/values.yaml
+
+      - name: Push and commit
+        run: |
+          git config --global user.email "rakshitsen1@gmail.com"
+          git config --global user.name "rakshitsen"
+          git add helm/go-web-app-chart/values.yaml
+          git commit -m "Update tag in helm chart"
+          git push
